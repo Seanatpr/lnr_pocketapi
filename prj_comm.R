@@ -35,6 +35,12 @@ API_URL_SEND <- paste(c(.API_URL_BASE, 'send'), collapse = '/')
 # API_HEADER <- list('content-type' = 'application/json; charset=UTF-8',
 #                    'x-accept' = 'application/json')
 
+# apiUrl <- function(...){
+#     return(str_c('urlbase', ..., sep = "/"))
+# }
+# 
+# print(apiUrl('a', 'b', 'b'))
+
 
 # Get all archived post id ------------------------------------------------
 # https://getpocket.com/developer/docs/authentication
@@ -106,8 +112,12 @@ api_result <- api_result$list
 
 
 extractItemInfo <- function(aItem){
-    return(data.frame(item_id =  coalesce(aItem$resolved_id, NULL),
-                      created_at = coalesce(aItem$time_added, 0),
+    if(aItem$resolved_id == '0'){
+        return(NULL)
+    }
+    
+    return(data.frame(item_id =  coalesce(aItem$resolved_id, ''),
+                      created_at = coalesce(aItem$time_added, '0'),
                       item_url = coalesce(aItem$resolved_url, ''),
                       item_title = coalesce(aItem$resolved_title, ''),
                       stringsAsFactors = FALSE))
@@ -120,16 +130,23 @@ for(i in 1:n) {
 }
 result <- do.call('rbind', result)
 result %>% 
-    filter(!is.na(item_id)) %>% 
+    filter(!is.na(item_id) &&
+           nchar(item_id)>0) %>% 
     mutate(created_at = as_datetime(as.integer(created_at))) ->
     result
 
-
 # delete ------------------------------------------------------------------
+# https://getpocket.com/developer/docs/v3/modify#action_delete
+result %>% 
+    mutate(action = 'delete') %>% 
+    select(action, item_id) -> x1
+
+
 api_call_body <- list(consumer_key = TOKEN_POCKET_CONSUMER_KEY,
                       access_token = TOKEN_POCKET_ACCESS_TOKEN,
-                      actions = list(action = 'delete',
-                                     item_id = 2612399272))
+                      actions = toJSON(transpose(x1), auto_unbox = TRUE))
 
 api_call_response <- POST(url = API_URL_SEND, 
                           body = api_call_body)
+
+api_result <- content(api_call_response)

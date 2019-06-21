@@ -49,12 +49,14 @@ api_call_url <- paste(c(API_URL_AUTH, 'request'), collapse = '/')
 api_call_body <- list(consumer_key = TOKEN_POCKET_CONSUMER_KEY,
                       redirect_uri = 'sp_pocket_app:authorizationFinished')
 
+    
+}
 api_call_response <- POST(url = api_call_url, 
                           body = api_call_body)
 
 request_token <- ''
 if(api_call_response$status_code == 200){
-    api_result <- rawToChar(api_call_response$content)    
+    api_result <- content(api_call_response, "text")   
     if(str_sub(api_result, 1, 5) == 'code='){
         api_result <- str_sub(api_result, 6, -1)
         if(nchar(api_result) == 30){
@@ -62,7 +64,6 @@ if(api_call_response$status_code == 200){
         }
     }
 }
-
 stopifnot(nchar(request_token)>0)
 
 # Step 3: Redirect user to Pocket to continue authorization
@@ -96,57 +97,3 @@ stopifnot(nchar(TOKEN_POCKET_USER_NAME)>0)
 
 
 
-
-# Get archived posts ------------------------------------------------------
-# https://getpocket.com/developer/docs/v3/retrieve
-api_call_body <- list(consumer_key = TOKEN_POCKET_CONSUMER_KEY,
-                      access_token = TOKEN_POCKET_ACCESS_TOKEN,
-                      state = 'archive',
-                      detailType = 'simple')
-
-api_call_response <- POST(url = API_URL_GET, 
-                          body = api_call_body)
-api_result <- rawToChar(api_call_response$content)  
-api_result <- fromJSON(api_result)
-api_result <- api_result$list
-
-
-extractItemInfo <- function(aItem){
-    if(aItem$resolved_id == '0'){
-        return(NULL)
-    }
-    
-    return(data.frame(item_id =  coalesce(aItem$resolved_id, ''),
-                      created_at = coalesce(aItem$time_added, '0'),
-                      item_url = coalesce(aItem$resolved_url, ''),
-                      item_title = coalesce(aItem$resolved_title, ''),
-                      stringsAsFactors = FALSE))
-}
-
-n <- length(api_result)
-result <- vector('list', n)
-for(i in 1:n) {
-    result[[i]] <- extractItemInfo(api_result[[i]])
-}
-result <- do.call('rbind', result)
-result %>% 
-    filter(!is.na(item_id) &&
-           nchar(item_id)>0) %>% 
-    mutate(created_at = as_datetime(as.integer(created_at))) ->
-    result
-
-# delete ------------------------------------------------------------------
-# https://getpocket.com/developer/docs/v3/modify#action_delete
-result %>% 
-    mutate(action = 'delete') %>% 
-    select(action, item_id) -> x1
-
-
-api_call_body <- list(consumer_key = TOKEN_POCKET_CONSUMER_KEY,
-                      access_token = TOKEN_POCKET_ACCESS_TOKEN,
-                      actions = toJSON(transpose(x1), auto_unbox = TRUE))
-
-api_call_response <- POST(url = API_URL_SEND, 
-                          body = api_call_body)
-
-api_result <- content(api_call_response)
